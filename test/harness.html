@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>ChatGPT</title>
+    <style>
+      body { font: 13px/1.5 ui-monospace, monospace; margin: 16px; background: #fff; color: #111; }
+      .pass { color: #137333; }
+      .fail { color: #c5221f; font-weight: bold; }
+      #chat { display: none; }
+    </style>
+  </head>
+  <body>
+    <h1>chatgpt-unread test</h1>
+    <pre id="out">running...</pre>
+    <div id="chat"></div>
+
+    <!-- 実際の拡張と同じく background と content を読み込み、偽の chrome API でつなぐ -->
+    <script src="/test/fake-chrome.js"></script>
+    <script>history.replaceState(null, '', '/c/abc');</script>
+    <script src="/background.js"></script>
+    <script src="/content.js"></script>
+    <script src="/test/run.js"></script>
+  </body>
+</html>

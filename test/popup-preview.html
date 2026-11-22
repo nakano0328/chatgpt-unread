@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="/popup.css" />
+  </head>
+  <!-- ポップアップの見た目を、サンプルデータを入れた状態で確認するためのページ -->
+  <body>
+    <header>
+      <h1>ChatGPT 未確認</h1>
+      <button id="mark-all" type="button" hidden>すべて確認済み</button>
+    </header>
+    <section>
+      <h2>未確認 <span id="unread-count" class="count"></span></h2>
+      <ul id="unread"></ul>
+      <p id="unread-empty" class="empty">未確認の回答はありません</p>
+    </section>
+    <section id="running-section" hidden>
+      <h2>実行中</h2>
+      <ul id="running"></ul>
+    </section>
+
+    <script src="/test/fake-chrome.js"></script>
+    <script>
+      const now = Date.now();
+      chrome.storage.local.set({
+        unread: {
+          'c:a': { key: 'c:a', convId: 'a', title: 'Swift の async/await の書き方', preview: 'Swift 6 では async 関数を呼び出す側も async コンテキストである必要があります。具体的には Task { } で囲むか…', tabId: 1, completedAt: now - 3 * 60e3 },
+          'c:b': { key: 'c:b', convId: 'b', title: '提案書の構成レビュー', preview: '全体の流れは良いと思います。3章の費用対効果は、先に結論を置くと…', tabId: 2, completedAt: now - 20e3 },
+        },
+        running: {
+          3: { tabId: 3, convId: 'c', title: '競合調査のまとめ', startedAt: now - 2 * 60e3 },
+        },
+      });
+    </script>
+    <script src="/popup.js"></script>
+  </body>
+</html>
