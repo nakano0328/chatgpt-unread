@@ -8,11 +8,12 @@ const DONE_WAIT = DONE_STABLE_MS + 700;
 const chat = document.getElementById('chat');
 const state = () => chrome.storage.local.get({ unread: {}, running: {} });
 
+// 2026-11 時点の本物の ChatGPT と同じく、送信ボタンの位置に aria-label="停止" のボタンが出る
 function startGenerating() {
   if (document.getElementById('stop')) return;
   const button = document.createElement('button');
   button.id = 'stop';
-  button.dataset.testid = 'stop-button';
+  button.setAttribute('aria-label', '停止');
   chat.append(button);
 }
 
@@ -22,7 +23,7 @@ function stopGenerating() {
 
 function addAnswer(text) {
   const answer = document.createElement('div');
-  answer.dataset.messageAuthorRole = 'assistant';
+  answer.dataset.markdownTextStyle = 'assistant-message';
   answer.textContent = text;
   chat.append(answer);
 }
@@ -97,6 +98,33 @@ test('停止ボタンが一瞬消えただけでは完了にしない', async ()
   await sleep(DONE_WAIT);
   ({ unread } = await state());
   assert(unread['c:abc'], '本当に消えたら未確認になる');
+});
+
+test('非表示の入力欄に残った「停止」は生成中とみなさない', async () => {
+  // 本物の ChatGPT では、前の画面の入力欄が display:none のまま「停止」を持ち続ける
+  const stale = document.createElement('div');
+  stale.style.display = 'none';
+  const button = document.createElement('button');
+  button.setAttribute('aria-label', '停止');
+  stale.append(button);
+  chat.append(stale);
+  check();
+  await settle();
+  const { running } = await state();
+  assert(!generating, '生成中にならない');
+  assert(!running[7], '実行中に出ない');
+});
+
+test('新しいチャットの仮 ID (local-...) から本当の ID に変わっても記録する', async () => {
+  goTo('/c/local-chatgpt');
+  startGenerating();
+  await settle();
+  goTo('/c/real1');
+  stopGenerating();
+  await sleep(DONE_WAIT);
+  const { unread } = await state();
+  assert(unread['c:real1'], `c:real1 で未確認になる (実際: ${Object.keys(unread)})`);
+  assert(!unread['c:local-chatgpt'], '仮 ID では記録しない');
 });
 
 test('その会話を見ると確認済みになる', async () => {

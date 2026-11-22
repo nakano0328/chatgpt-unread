@@ -5,22 +5,37 @@ const DEBUG = localStorage.getItem('chatgpt-unread-debug') === '1';
 const log = (...args) => DEBUG && console.log('[chatgpt-unread]', ...args);
 
 // 生成中だけ表示される要素。ChatGPT の UI が変わって検出できなくなったらここを直す
+// 2026-11 時点の日本語 UI では、送信ボタンが aria-label="停止" のボタンに入れ替わる
 const GENERATING_SELECTORS = [
-  'button[data-testid="stop-button"]',
+  'button[aria-label="停止"]',
+  'button[aria-label="Stop"]',
   'button[aria-label="Stop streaming"]',
-  '.result-streaming',
+  'button[data-testid="stop-button"]',
 ];
+
+// 回答本文。最初の候補が見つからなければ次を試す
+const ANSWER_SELECTORS = [
+  '[data-markdown-text-style="assistant-message"]',
+  '[data-message-author-role="assistant"]',
+];
+
+// ChatGPT は前の画面の入力欄を非表示のまま残すことがあり、そこに「停止」が残り続けるので、見えているものだけ数える
+function findVisible(selector) {
+  return [...document.querySelectorAll(selector)].filter((el) => el.checkVisibility());
+}
 
 // 停止ボタンは検索・思考の切り替わりで一瞬消えることがあるので、この時間消えたままなら完了とみなす
 const DONE_STABLE_MS = 1500;
 
 function isGenerating() {
-  return GENERATING_SELECTORS.some((selector) => document.querySelector(selector));
+  return GENERATING_SELECTORS.some((selector) => findVisible(selector).length > 0);
 }
 
 function conversationId() {
   const match = location.pathname.match(/\/c\/([0-9a-zA-Z-]+)/);
-  return match ? match[1] : null;
+  // 新しいチャットは本当の ID が決まるまで /c/local-... になるので、ID なしとして扱う
+  if (!match || match[1].startsWith('local-')) return null;
+  return match[1];
 }
 
 function conversationTitle() {
@@ -29,9 +44,11 @@ function conversationTitle() {
 }
 
 function lastAnswerPreview() {
-  const answers = document.querySelectorAll('[data-message-author-role="assistant"]');
-  const last = answers[answers.length - 1];
-  return last ? last.innerText.replace(/\s+/g, ' ').trim().slice(0, 120) : '';
+  for (const selector of ANSWER_SELECTORS) {
+    const last = findVisible(selector).at(-1);
+    if (last) return last.innerText.replace(/\s+/g, ' ').trim().slice(0, 120);
+  }
+  return '';
 }
 
 function isUserLooking() {
@@ -103,7 +120,8 @@ function reportViewing() {
   if (isUserLooking()) send({ type: 'viewing', convId: conversationId() });
 }
 
-send({ type: 'hello' });
+// version はログで「新しいコードが読み込まれたか」を確かめるため
+send({ type: 'hello', version: chrome.runtime.getManifest().version });
 window.addEventListener('focus', reportViewing);
 document.addEventListener('visibilitychange', reportViewing);
 new MutationObserver(check).observe(document.body, {
