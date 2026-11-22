@@ -1,7 +1,7 @@
 // テスト用に、background.js と content.js が使う chrome.* の部分だけを真似る
 (() => {
   const data = {};
-  const listeners = { changed: [], message: [], startup: [], installed: [], removed: [] };
+  const listeners = { changed: [], message: [], startup: [], installed: [], removed: [], updated: [] };
   const clone = (value) => structuredClone(value);
 
   const fake = {
@@ -11,12 +11,19 @@
     tabs: [],
     focused: [],
     created: [],
+    closed: [],
+    // 中継プログラムに送ったメッセージ。nativeFails を true にすると未登録のように失敗する
+    native: [],
+    nativeFails: false,
     // ポップアップからの送信として扱う（sender.tab がない）
     async popupSend(message) {
       listeners.message.forEach((listener) => listener(message, {}, () => {}));
     },
     fireTabRemoved(tabId) {
       listeners.removed.forEach((listener) => listener(tabId));
+    },
+    fireTabUpdated(tabId, changeInfo) {
+      return Promise.all(listeners.updated.map((listener) => listener(tabId, changeInfo)));
     },
   };
   window.__fake = fake;
@@ -50,9 +57,15 @@
       onMessage: { addListener: (listener) => listeners.message.push(listener) },
       onStartup: { addListener: (listener) => listeners.startup.push(listener) },
       onInstalled: { addListener: (listener) => listeners.installed.push(listener) },
+      getManifest: () => ({ version: 'test' }),
       // content script からの送信として扱う
       async sendMessage(message) {
         listeners.message.forEach((listener) => listener(message, { tab: { id: fake.tabId } }, () => {}));
+      },
+      async sendNativeMessage(host, message) {
+        if (fake.nativeFails) throw new Error('Specified native messaging host not found.');
+        fake.native.push(message);
+        return { ok: true };
       },
     },
     action: {
@@ -78,7 +91,11 @@
       async create({ url }) {
         fake.created.push(url);
       },
+      async remove(tabId) {
+        fake.closed.push(tabId);
+      },
       onRemoved: { addListener: (listener) => listeners.removed.push(listener) },
+      onUpdated: { addListener: (listener) => listeners.updated.push(listener) },
     },
     windows: {
       async update() {},

@@ -52,11 +52,17 @@ async function reset() {
   document.title = 'ChatGPT';
   check();
   await settle();
+  __fake.nativeFails = false;
   await update((s) => {
     s.unread = {};
     s.running = {};
   });
+  __fake.native = [];
+  __fake.closed = [];
 }
+
+// CodeStatus に送った種類の列。例: ['UserPromptSubmit', 'Stop']
+const sentKinds = () => __fake.native.map((m) => m.kind);
 
 const results = [];
 const tests = [];
@@ -229,6 +235,82 @@ test('生成中のタブを閉じると実行中から消える', async () => {
   await settle();
   const { running } = await state();
   assert(!running[7], '実行中から消える');
+});
+
+test('CodeStatus: 生成中は busy、完了で free、見たら終了を送る', async () => {
+  startGenerating();
+  await settle();
+  assert(sentKinds().join() === 'UserPromptSubmit', `開始 (実際: ${sentKinds()})`);
+  stopGenerating();
+  await sleep(DONE_WAIT);
+  assert(sentKinds().join() === 'UserPromptSubmit,Stop', `完了 (実際: ${sentKinds()})`);
+  __fake.looking = true;
+  window.dispatchEvent(new Event('focus'));
+  await settle();
+  assert(sentKinds().join() === 'UserPromptSubmit,Stop,SessionEnd', `確認 (実際: ${sentKinds()})`);
+  const ids = new Set(__fake.native.map((m) => m.sessionId));
+  assert(ids.size === 1, `同じセッション ID で送る (実際: ${[...ids]})`);
+});
+
+test('CodeStatus: 見ている間に完了したら一覧から消す', async () => {
+  __fake.looking = true;
+  await complete();
+  assert(sentKinds().join() === 'UserPromptSubmit,SessionEnd', `実際: ${sentKinds()}`);
+});
+
+test('CodeStatus: 次の質問は別のセッションとして送る', async () => {
+  await complete();
+  startGenerating();
+  await settle();
+  assert(sentKinds().join() === 'UserPromptSubmit,Stop,SessionEnd,UserPromptSubmit', `実際: ${sentKinds()}`);
+  const [first, , end, next] = __fake.native;
+  assert(end.sessionId === first.sessionId, '前のセッションを終える');
+  assert(next.sessionId !== first.sessionId, '新しいセッション ID');
+});
+
+test('CodeStatus: 後から付いたタイトルを送り直す', async () => {
+  goTo('/');
+  startGenerating();
+  await settle();
+  goTo('/c/new2');
+  stopGenerating();
+  await sleep(DONE_WAIT);
+  document.title = '料理の相談';
+  check();
+  await settle();
+  const last = __fake.native.at(-1);
+  assert(last.kind === 'Stop' && last.title === '料理の相談', `実際: ${JSON.stringify(last)}`);
+});
+
+test('CodeStatus: 送れなくても未確認は残り、次の更新で送り直す', async () => {
+  __fake.nativeFails = true;
+  await complete();
+  let { unread, mirrored } = await chrome.storage.local.get({ unread: {}, mirrored: {} });
+  assert(unread['c:abc'], '未確認は残る');
+  assert(Object.keys(mirrored).length === 0, '送れた記録はない');
+  __fake.nativeFails = false;
+  document.title = '再送のきっかけ';
+  check();
+  await settle();
+  ({ mirrored } = await chrome.storage.local.get({ mirrored: {} }));
+  assert(sentKinds().includes('Stop'), `Stop を送り直す (実際: ${sentKinds()})`);
+  assert(Object.values(mirrored)[0]?.state === 'free', 'free として記録');
+});
+
+test('CodeStatus から開いたタブは、既存の会話タブに切り替えて閉じる', async () => {
+  __fake.tabs = [
+    { id: 7, windowId: 1, url: 'https://chatgpt.com/c/abc' },
+    { id: 9, windowId: 1, url: 'https://chatgpt.com/c/abc#codestatus' },
+  ];
+  await __fake.fireTabUpdated(9, { url: 'https://chatgpt.com/c/abc#codestatus' });
+  assert(__fake.focused.includes(7), '既存タブ 7 に移動');
+  assert(__fake.closed.includes(9), '開いたタブ 9 は閉じる');
+});
+
+test('CodeStatus から開いた会話のタブがなければ、そのまま残す', async () => {
+  __fake.tabs = [{ id: 9, windowId: 1, url: 'https://chatgpt.com/c/abc#codestatus' }];
+  await __fake.fireTabUpdated(9, { url: 'https://chatgpt.com/c/abc#codestatus' });
+  assert(__fake.closed.length === 0, '閉じない');
 });
 
 (async () => {

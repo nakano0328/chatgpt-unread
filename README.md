@@ -23,6 +23,32 @@ Claude Code / Codex は CodeStatus で管理し、ChatGPT だけこの拡張で�
 
 コードを変更したら、`chrome://extensions` でこの拡張の再読み込みボタンを押し、ChatGPT のタブも再読み込みしてください。
 
+## CodeStatus のメニューバーにも出す
+
+[CodeStatus](https://codestatus.dev/) を使っていれば、ChatGPT の生成中・未確認の会話を Claude Code / Codex と同じ一覧に出せます。
+
+```bash
+./native-host/install.sh
+```
+
+その後、`chrome://extensions` で拡張を再読み込みします。
+
+- 生成中は busy、未確認は free として「ChatGPT · 会話タイトル」の名前で並ぶ（CodeStatus 上の種類は「Agent」）
+- 一覧の行をクリックすると、その会話が開く。同じ会話のタブがあればそちらに切り替わる
+- 拡張側で確認済みになると、CodeStatus の一覧からも消える
+
+登録を外すときは `./native-host/install.sh --uninstall` を実行します。
+
+### 仕組みと制約
+
+- 拡張 → Native Messaging → `native-host/host.py` → CodeStatus のソケット（`~/Library/Application Support/CodeStatus/run/`）
+- host.py は CodeStatus の hook と同じ形式（1 行の JSON）で `UserPromptSubmit` / `Stop` / `SessionEnd` を送る。CodeStatus 本体は変更していない
+- 一覧の名前は cwd の最後の要素から作られるので、`~/Library/Application Support/chatgpt-unread/links/` に「ChatGPT · タイトル」という名前で会話 URL の `.webloc` を指すリンクを作り、それを cwd として渡している
+- CodeStatus 内部のソケット形式に頼っているため、CodeStatus のアップデートで動かなくなる可能性がある
+- CodeStatus が起動していないときに起きた変化は、次に拡張の状態が変わったときにまとめて送り直す
+- Mac のスリープ復帰後は、CodeStatus が全セッションを「reconnecting」にするため、次の変化まで ChatGPT の行がその表示になることがある
+- クリックで開くブラウザは、Mac の既定のブラウザ
+
 ## 仕組み
 
 | ファイル | 役割 |
@@ -43,6 +69,7 @@ python3 -m http.server 8765
 
 - http://localhost:8765/test/harness.html を開くと、全テストの結果が表示される
 - http://localhost:8765/test/popup-preview.html でサンプルデータ入りのポップアップの見た目を確認できる
+- 中継プログラムは `/usr/bin/python3 test/test_host.py` で、偽の CodeStatus ソケットに向けて確かめる
 
 ## 検出できなくなったとき
 
@@ -59,4 +86,4 @@ ChatGPT の画面が変わると、生成中の判定がずれることがあり
 
 ## 今後の候補
 
-- CodeStatus と統合して、メニューバーの一か所で見られるようにする（Native Messaging 経由）
+- CodeStatus を Fork して、「Agent」ではなく「ChatGPT」と表示し、スリープ復帰後の表示も直す
