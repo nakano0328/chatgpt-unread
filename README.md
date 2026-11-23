@@ -88,3 +88,9 @@ ChatGPT の画面が変わると、生成中の判定がずれることがあり
 
 ログを止めるには `localStorage.removeItem('chatgpt-unread-debug')` を実行します。
 
+
+## ライセンス
+
+[MIT License](LICENSE)
+
+CodeStatus との連携は、[henriquegpb/codestatus](https://github.com/henriquegpb/codestatus)（MIT License）を Fork して ChatGPT 対応を足した [nakano0328/codestatus](https://github.com/nakano0328/codestatus/tree/chatgpt) を前提にしています。
