@@ -4,9 +4,9 @@
 Chrome の Native Messaging で 1 メッセージごとに起動され、1 つ処理して返事をして終わる。
 macOS 標準の /usr/bin/python3 (3.9) で動くよう、標準ライブラリだけで書いている。
 
-CodeStatus 側から見ると provider が未知の「Agent」セッションに見える。一覧の行の名前は
-cwd の最後の要素になり、クリックすると cwd が開かれるので、cwd には
-「ChatGPT · 会話タイトル」という名前で会話 URL の .webloc を指すシンボリックリンクを渡す。
+送り先は ChatGPT 対応を足した CodeStatus の Fork (nakano0328/codestatus の chatgpt ブランチ)。
+provider "chatgpt" として送ると、一覧に会話タイトルで並び、クリックで conversation_url が
+Chrome で開く。
 """
 
 import json
@@ -29,7 +29,6 @@ CODESTATUS_RUN = os.environ.get(
 KINDS = {"UserPromptSubmit", "Stop", "SessionEnd"}
 # 拡張側でこの印の付いたタブを見つけたら、同じ会話の既存タブへ切り替える
 OPENED_FROM_CODESTATUS = "#codestatus"
-TITLE_MAX = 60
 
 
 def read_message():
@@ -58,46 +57,17 @@ def socket_path():
     return os.path.join(CODESTATUS_RUN, "e.sock")
 
 
-def safe_name(text):
-    # ファイル名に使えない / と、Finder で / に化ける : を置き換える
-    cleaned = " ".join(text.replace("/", "／").replace(":", "：").split())
-    return cleaned[:TITLE_MAX] or "新しいチャット"
-
-
-def link_dir(session_id):
-    return os.path.join(DATA_DIR, "links", safe_name(session_id))
-
-
-def write_link(session_id, title, url):
-    """会話 URL を開く .webloc と、それを指す「ChatGPT · タイトル」のリンクを作り、リンクのパスを返す。"""
-    directory = link_dir(session_id)
-    os.makedirs(directory, exist_ok=True)
-
-    target = os.path.join(directory, "open.webloc")
-    url = (url or "https://chatgpt.com/").split("#")[0] + OPENED_FROM_CODESTATUS
-    with open(target, "w", encoding="utf-8") as f:
-        f.write(
-            '<?xml version="1.0" encoding="UTF-8"?>\n'
-            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
-            '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
-            '<plist version="1.0"><dict><key>URL</key><string>'
-            + url.replace("&", "&amp;").replace("<", "&lt;")
-            + "</string></dict></plist>\n"
-        )
-
-    # タイトルが変わったときに古いリンクが残らないよう、作り直す
-    for name in os.listdir(directory):
-        if name != "open.webloc":
-            os.remove(os.path.join(directory, name))
-    link = os.path.join(directory, "ChatGPT · " + safe_name(title))
-    os.symlink(target, link)
-    return link
+def remove_old_links():
+    # Fork 版より前は、行の名前とクリック先のためにリンクを作っていた。もう使わないので片付ける
+    links = os.path.join(DATA_DIR, "links")
+    if os.path.isdir(links):
+        shutil.rmtree(links, ignore_errors=True)
 
 
 _counter = 0
 
 
-def send_event(kind, session_id, cwd):
+def send_event(kind, session_id, title=None, url=None):
     global _counter
     _counter += 1
     line = {
@@ -109,8 +79,10 @@ def send_event(kind, session_id, cwd):
         "turn_id": "chatgpt-" + session_id,
         "ts": time.time(),
     }
-    if cwd:
-        line["cwd"] = cwd
+    if title:
+        line["title"] = title
+    if url:
+        line["conversation_url"] = url.split("#")[0] + OPENED_FROM_CODESTATUS
     payload = (json.dumps(line, ensure_ascii=False) + "\n").encode("utf-8")
 
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
@@ -126,15 +98,14 @@ def handle(message):
         return {"ok": False, "error": "bad message"}
 
     if kind == "SessionEnd":
-        send_event(kind, session_id, None)
-        shutil.rmtree(link_dir(session_id), ignore_errors=True)
+        send_event(kind, session_id)
     else:
-        cwd = write_link(session_id, message.get("title") or "", message.get("url"))
-        send_event(kind, session_id, cwd)
+        send_event(kind, session_id, message.get("title"), message.get("url"))
     return {"ok": True}
 
 
 def main():
+    remove_old_links()
     message = read_message()
     if message is None:
         return

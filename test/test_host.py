@@ -5,7 +5,6 @@
 
 import json
 import os
-import plistlib
 import shutil
 import socket
 import struct
@@ -98,22 +97,23 @@ class HostTest(unittest.TestCase):
         self.assertNotEqual(busy["id"], free["id"])
         self.assertEqual(free["hook_event_name"], "Stop")
 
-        # 一覧に出る名前 = cwd の最後の要素。使えない文字は置き換わり、古いタイトルのリンクは消える
-        self.assertEqual(os.path.basename(free["cwd"]), "ChatGPT · 日本の歴史： 要約／まとめ")
-        self.assertEqual(
-            sorted(os.listdir(os.path.dirname(free["cwd"]))),
-            sorted(["open.webloc", os.path.basename(free["cwd"])]),
-        )
-
-        # クリックで開かれるリンクの先は、会話 URL に印を付けた .webloc
-        with open(os.path.realpath(free["cwd"]), "rb") as f:
-            self.assertEqual(plistlib.load(f)["URL"], url + "#codestatus")
+        # タイトルはそのまま送り、クリック用の URL には拡張が既存タブを探すための印を付ける
+        self.assertEqual(busy["title"], "新しいチャット")
+        self.assertEqual(free["title"], "日本の歴史: 要約/まとめ")
+        self.assertEqual(free["conversation_url"], url + "#codestatus")
+        self.assertNotIn("cwd", free)
 
         self.assertEqual(self.call({"kind": "SessionEnd", "sessionId": "c:abc-1"}), {"ok": True})
         end = self.wait_lines(server, 3)[2]
         self.assertEqual(end["hook_event_name"], "SessionEnd")
-        self.assertNotIn("cwd", end)
-        self.assertFalse(os.path.exists(os.path.dirname(free["cwd"])))
+        self.assertNotIn("title", end)
+        self.assertNotIn("conversation_url", end)
+
+    def test_removes_links_from_older_version(self):
+        links = os.path.join(self.data_dir, "links", "c:old-1")
+        os.makedirs(links)
+        self.call({"kind": "PreToolUse", "sessionId": "x"})
+        self.assertFalse(os.path.exists(os.path.join(self.data_dir, "links")))
 
     def test_codestatus_not_running(self):
         reply = self.call({"kind": "Stop", "sessionId": "c:abc-1", "title": "t", "url": "https://chatgpt.com/c/abc"})

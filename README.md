@@ -25,29 +25,33 @@ Claude Code / Codex は CodeStatus で管理し、ChatGPT だけこの拡張で�
 
 ## CodeStatus のメニューバーにも出す
 
-[CodeStatus](https://codestatus.dev/) を使っていれば、ChatGPT の生成中・未確認の会話を Claude Code / Codex と同じ一覧に出せます。
+ChatGPT 対応を足した [CodeStatus の Fork](https://github.com/nakano0328/codestatus/tree/chatgpt) を使うと、ChatGPT の生成中・未確認の会話を Claude Code / Codex と同じ一覧に出せます。
 
 ```bash
-./native-host/install.sh
+cd ~/asobi/codestatus && git switch chatgpt && scripts/install-local.sh
+```
+
+```bash
+cd ~/asobi/chatgpt-unread && ./native-host/install.sh
 ```
 
 その後、`chrome://extensions` で拡張を再読み込みします。
 
-- 生成中は busy、未確認は free として「ChatGPT · 会話タイトル」の名前で並ぶ（CodeStatus 上の種類は「Agent」）
-- 一覧の行をクリックすると、その会話が開く。同じ会話のタブがあればそちらに切り替わる
+- 生成中は busy、未確認は free として、会話タイトルの名前で並ぶ（種類は「ChatGPT」、右端は「Chrome」）
+- 一覧の行をクリックすると、その会話が Chrome で開く。同じ会話のタブがあればそちらに切り替わる
 - 拡張側で確認済みになると、CodeStatus の一覧からも消える
+- 見ていない間に完了すると、CodeStatus の通知が出る
 
 登録を外すときは `./native-host/install.sh --uninstall` を実行します。
 
 ### 仕組みと制約
 
 - 拡張 → Native Messaging → `native-host/host.py` → CodeStatus のソケット（`~/Library/Application Support/CodeStatus/run/`）
-- host.py は CodeStatus の hook と同じ形式（1 行の JSON）で `UserPromptSubmit` / `Stop` / `SessionEnd` を送る。CodeStatus 本体は変更していない
-- 一覧の名前は cwd の最後の要素から作られるので、`~/Library/Application Support/chatgpt-unread/links/` に「ChatGPT · タイトル」という名前で会話 URL の `.webloc` を指すリンクを作り、それを cwd として渡している
-- CodeStatus 内部のソケット形式に頼っているため、CodeStatus のアップデートで動かなくなる可能性がある
+- host.py は CodeStatus の hook と同じ形式（1 行の JSON）で `UserPromptSubmit` / `Stop` / `SessionEnd` を送り、`provider: "chatgpt"`・`title`・`conversation_url` を付ける
+- Fork 側では、ChatGPT の行はプロセスを持たないものとして扱い、スリープ復帰・CodeStatus の再起動でも消えたり「reconnecting」になったりしない
+- 会話タイトルは CodeStatus のファイルには保存しない（本家の方針どおり）ので、CodeStatus を再起動した直後は、次の変化まで行の名前が「ChatGPT」になる
 - CodeStatus が起動していないときに起きた変化は、次に拡張の状態が変わったときにまとめて送り直す
-- Mac のスリープ復帰後は、CodeStatus が全セッションを「reconnecting」にするため、次の変化まで ChatGPT の行がその表示になることがある
-- クリックで開くブラウザは、Mac の既定のブラウザ
+- Fork 版は簡易署名なので自動アップデートは動かない。本家の更新を取り込むときは、Fork に upstream をマージして `scripts/install-local.sh` を再実行する
 
 ## 仕組み
 
@@ -84,6 +88,3 @@ ChatGPT の画面が変わると、生成中の判定がずれることがあり
 
 ログを止めるには `localStorage.removeItem('chatgpt-unread-debug')` を実行します。
 
-## 今後の候補
-
-- CodeStatus を Fork して、「Agent」ではなく「ChatGPT」と表示し、スリープ復帰後の表示も直す
